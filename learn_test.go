@@ -20,7 +20,7 @@ func TestPCARowsIris(t *testing.T) {
 	}
 	emb := pcaRows(x, n, size, width)
 
-	for k := 0; k < size; k++ {
+	for k := 0; k < width; k++ {
 		norm := 0.0
 		for i := 0; i < n; i++ {
 			v := emb[i*width+k]
@@ -30,13 +30,14 @@ func TestPCARowsIris(t *testing.T) {
 			t.Fatalf("component %d norm %g", k, norm)
 		}
 	}
+	constant := 1 / math.Sqrt(float64(n))
 	for i := 0; i < n; i++ {
-		if emb[i*width+size] != 0 {
-			t.Fatalf("extra component %g", emb[i*width+size])
+		if math.Abs(emb[i*width+size]-constant) > 1e-6 {
+			t.Fatalf("constant component %g", emb[i*width+size])
 		}
 	}
-	for a := 0; a < size; a++ {
-		for b := a + 1; b < size; b++ {
+	for a := 0; a < width; a++ {
+		for b := a + 1; b < width; b++ {
 			dot := 0.0
 			for i := 0; i < n; i++ {
 				dot += emb[i*width+a] * emb[i*width+b]
@@ -68,7 +69,22 @@ func TestPCARowsIris(t *testing.T) {
 			}
 			want := x[i*size+f] - mean[f]
 			if math.Abs(got-want) > 1e-5 {
-				t.Fatalf("sample %d feature %d got %g want %g", i, f, got, want)
+				t.Fatalf("centered sample %d feature %d got %g want %g", i, f, got, want)
+			}
+		}
+	}
+	for i := 0; i < n; i++ {
+		for f := 0; f < size; f++ {
+			got := 0.0
+			for j := 0; j < n; j++ {
+				dot := 0.0
+				for k := 0; k < width; k++ {
+					dot += emb[i*width+k] * emb[j*width+k]
+				}
+				got += dot * x[j*size+f]
+			}
+			if math.Abs(got-x[i*size+f]) > 1e-5 {
+				t.Fatalf("raw sample %d feature %d got %g want %g", i, f, got, x[i*size+f])
 			}
 		}
 	}

@@ -152,8 +152,10 @@ func jacobiEigen(a []float64, n int) (diag []float64, vectors []float64) {
 }
 
 // pcaRows is the PCA initialization of the embedding. Each row is one sample.
-// Columns are the leading left singular vectors of the centered measurements,
-// largest variance first, and columns past the numerical rank are zero.
+// Columns are orthonormal directions in sample space, largest variance first:
+// the leading left singular vectors of the centered measurements, then the
+// constant direction that centering removes. Four iris measurements therefore
+// fill all five embedding coordinates.
 func pcaRows(x []float64, n, size, width int) []float64 {
 	emb := make([]float64, n*width)
 	if n == 0 || size == 0 || width == 0 {
@@ -218,6 +220,34 @@ func pcaRows(x []float64, n, size, width int) []float64 {
 			emb[i*width+rank] = dot / sigma
 		}
 		rank++
+	}
+	// Centering makes every principal axis orthogonal to the all-ones vector.
+	// That leftover direction is the fifth coordinate when width is one past
+	// the measurement rank.
+	if rank < width {
+		extra := make([]float64, n)
+		for i := range extra {
+			extra[i] = 1
+		}
+		for k := 0; k < rank; k++ {
+			dot := 0.0
+			for i := 0; i < n; i++ {
+				dot += extra[i] * emb[i*width+k]
+			}
+			for i := 0; i < n; i++ {
+				extra[i] -= dot * emb[i*width+k]
+			}
+		}
+		norm := 0.0
+		for _, v := range extra {
+			norm += v * v
+		}
+		norm = math.Sqrt(norm)
+		if norm > 1e-8 {
+			for i := 0; i < n; i++ {
+				emb[i*width+rank] = extra[i] / norm
+			}
+		}
 	}
 	return emb
 }
