@@ -93,6 +93,42 @@ func seed(rng *rand.Rand, data []ClusteredObservation, k int, distanceFunction D
 	return s
 }
 
+// maxKMeansIterations caps a run when threshold is negative.
+// A negative threshold means "until assignments settle".
+const maxKMeansIterations = 300
+
+// reseedEmpty moves an empty centroid onto the point farthest from every
+// occupied centroid. An empty cluster would otherwise divide by zero.
+func reseedEmpty(mean []Observation, counts []int, data []ClusteredObservation, distanceFunction DistanceFunction) {
+	for c := range mean {
+		if counts[c] != 0 {
+			continue
+		}
+		farthest := 0
+		farthestDist := math.Inf(-1)
+		for i, p := range data {
+			nearest := math.Inf(1)
+			for j := range mean {
+				if counts[j] == 0 {
+					continue
+				}
+				d, err := distanceFunction(p.Observation, mean[j])
+				if err != nil {
+					continue
+				}
+				if d < nearest {
+					nearest = d
+				}
+			}
+			if nearest > farthestDist {
+				farthestDist = nearest
+				farthest = i
+			}
+		}
+		mean[c] = append(Observation(nil), data[farthest].Observation...)
+	}
+}
+
 // K-Means Algorithm
 func kmeans(data []ClusteredObservation, mean []Observation, distanceFunction DistanceFunction, threshold int) ([]ClusteredObservation, error) {
 	counter := 0
@@ -101,7 +137,8 @@ func kmeans(data []ClusteredObservation, mean []Observation, distanceFunction Di
 		data[ii].ClusterNumber = closestCluster
 	}
 	mLen := make([]int, len(mean))
-	for n := len(data[0].Observation); ; {
+	n := len(data[0].Observation)
+	for {
 		for ii := range mean {
 			mean[ii] = make(Observation, n)
 			mLen[ii] = 0
@@ -110,8 +147,16 @@ func kmeans(data []ClusteredObservation, mean []Observation, distanceFunction Di
 			mean[p.ClusterNumber].Add(p.Observation)
 			mLen[p.ClusterNumber]++
 		}
+		empty := false
 		for ii := range mean {
+			if mLen[ii] == 0 {
+				empty = true
+				continue
+			}
 			mean[ii].Mul(1 / float64(mLen[ii]))
+		}
+		if empty {
+			reseedEmpty(mean, mLen, data, distanceFunction)
 		}
 		var changes int
 		for ii, p := range data {
@@ -121,11 +166,14 @@ func kmeans(data []ClusteredObservation, mean []Observation, distanceFunction Di
 			}
 		}
 		counter++
-		if changes == 0 || counter > threshold {
+		stop := counter > threshold
+		if threshold < 0 {
+			stop = counter >= maxKMeansIterations
+		}
+		if (changes == 0 && !empty) || stop {
 			return data, nil
 		}
 	}
-	return data, nil
 }
 
 // K-Means Algorithm with smart seeds
