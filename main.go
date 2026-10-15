@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -22,6 +23,9 @@ import (
 
 //go:embed iris.zip
 var Iris embed.FS
+
+//go:embed bcwd.zip
+var Bcwd embed.FS
 
 // Fisher is the fisher iris data
 type Fisher struct {
@@ -87,6 +91,59 @@ func Load() []Fisher {
 		}
 	}
 	return fisher
+}
+
+// LoadBcwd loads the Breast Cancer Wisconsin (Diagnostic) data set.
+// Each record is an id, a diagnosis (M or B), and 30 measurements.
+func LoadBcwd() []Fisher {
+	file, err := Bcwd.Open("bcwd.zip")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		panic(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		panic(err)
+	}
+	records := make([]Fisher, 0, 569)
+	for _, f := range reader.File {
+		if f.Name != "wdbc.data" {
+			continue
+		}
+		raw, err := f.Open()
+		if err != nil {
+			panic(err)
+		}
+		rows, err := csv.NewReader(raw).ReadAll()
+		raw.Close()
+		if err != nil {
+			panic(err)
+		}
+		for i, item := range rows {
+			if len(item) != 32 {
+				panic(fmt.Sprintf("wdbc row %d has %d fields", i, len(item)))
+			}
+			record := Fisher{
+				Measures: make([]float64, 30),
+				Label:    item[1],
+				Index:    i,
+			}
+			for ii, field := range item[2:] {
+				value, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					panic(err)
+				}
+				record.Measures[ii] = value
+			}
+			records = append(records, record)
+		}
+	}
+	return records
 }
 
 // standardizeColumns centers each column and scales it to unit variance.
@@ -184,7 +241,7 @@ func autoencoderEmbedding(x []float64, n, size, width, iterations int, rng *rand
 }
 
 // LearnEmbeddingIris learns the iris embedding
-func LearnEmbeddingIris(iris []Fisher, size, width, iterations int) []Fisher {
+func LearnEmbeddingIris(iris []Fisher, size, width, k, iterations int) []Fisher {
 	const Eta = 1e-3
 	rng := rand.New(rand.NewSource(1))
 	context := gradient.Context[float64]{}
@@ -236,8 +293,6 @@ func LearnEmbeddingIris(iris []Fisher, size, width, iterations int) []Fisher {
 	for i := range meta {
 		meta[i] = make([]float64, len(cp))
 	}
-	const k = 3
-
 	{
 		y := set.ByName["i"]
 		vectors := make([][]float64, len(cp))
@@ -263,7 +318,7 @@ func LearnEmbeddingIris(iris []Fisher, size, width, iterations int) []Fisher {
 			}
 		}
 	}
-	clusters, _, err := kmeans.Kmeans(1, meta, 3, kmeans.SquaredEuclideanDistance, -1)
+	clusters, _, err := kmeans.Kmeans(1, meta, k, kmeans.SquaredEuclideanDistance, -1)
 	if err != nil {
 		panic(err)
 	}
@@ -283,26 +338,45 @@ func LearnEmbeddingIris(iris []Fisher, size, width, iterations int) []Fisher {
 	return cp
 }
 
-// ClusterMode is the iris clustering mode
-func ClusterMode() {
+// clusterDataset shuffles records, learns an embedding, and clusters it.
+// width is the embedding dimension and k is the number of clusters.
+func clusterDataset(records []Fisher, size, width, k, iterations int) {
 	rng := rand.New(rand.NewSource(1))
-	iris := Load()
-	rng.Shuffle(len(iris), func(i, j int) {
-		iris[i], iris[j] = iris[j], iris[i]
+	rng.Shuffle(len(records), func(i, j int) {
+		records[i], records[j] = records[j], records[i]
 	})
-	embedding := LearnEmbeddingIris(iris, 4, 5, 2*1024)
-	accuracy := make(map[string][3]int)
+	embedding := LearnEmbeddingIris(records, size, width, k, iterations)
+	accuracy := make(map[string][]int)
 	for i := range embedding {
 		fmt.Println(embedding[i].Cluster, embedding[i].Label)
 		counts := accuracy[embedding[i].Label]
+		if counts == nil {
+			counts = make([]int, k)
+			accuracy[embedding[i].Label] = counts
+		}
 		counts[embedding[i].Cluster]++
-		accuracy[embedding[i].Label] = counts
 	}
-	for i, v := range accuracy {
-		fmt.Println(i, v)
+	for label, counts := range accuracy {
+		fmt.Println(label, counts)
 	}
 }
 
+// ClusterMode is the iris clustering mode
+func ClusterMode() {
+	clusterDataset(Load(), 4, 5, 3, 2*1024)
+}
+
+// ClusterBcwd is the breast cancer wisconsin diagnostic clustering mode
+func ClusterBcwd() {
+	clusterDataset(LoadBcwd(), 30, 5, 2, 2*1024)
+}
+
 func main() {
+	bcwd := flag.Bool("bcwd", false, "cluster the breast cancer wisconsin diagnostic dataset")
+	flag.Parse()
+	if *bcwd {
+		ClusterBcwd()
+		return
+	}
 	ClusterMode()
 }

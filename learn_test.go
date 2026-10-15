@@ -6,6 +6,45 @@ import (
 	"testing"
 )
 
+func TestLoadBcwd(t *testing.T) {
+	records := LoadBcwd()
+	if len(records) != 569 {
+		t.Fatalf("rows %d", len(records))
+	}
+	counts := map[string]int{}
+	for i, record := range records {
+		if len(record.Measures) != 30 {
+			t.Fatalf("row %d measures %d", i, len(record.Measures))
+		}
+		if record.Label != "M" && record.Label != "B" {
+			t.Fatalf("row %d label %q", i, record.Label)
+		}
+		counts[record.Label]++
+	}
+	if counts["M"] != 212 || counts["B"] != 357 {
+		t.Fatalf("labels %v", counts)
+	}
+}
+
+func TestBcwdOneStep(t *testing.T) {
+	records := LoadBcwd()
+	got := LearnEmbeddingIris(records, 30, 5, 2, 1)
+	if len(got) != len(records) {
+		t.Fatalf("len %d", len(got))
+	}
+	for i, record := range got {
+		if len(record.Embedding) != 5 {
+			t.Fatalf("row %d embedding %d", i, len(record.Embedding))
+		}
+		if record.Cluster < 0 || record.Cluster > 1 {
+			t.Fatalf("row %d cluster %d", i, record.Cluster)
+		}
+		if record.Label != "M" && record.Label != "B" {
+			t.Fatalf("row %d label %q", i, record.Label)
+		}
+	}
+}
+
 func TestAutoencoderEmbedding(t *testing.T) {
 	iris := Load()
 	const size, width, iterations = 4, 5, 256
