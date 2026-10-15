@@ -360,7 +360,14 @@ func printClusters(embedding []Fisher, k int) {
 		}
 		counts[embedding[i].Cluster]++
 	}
-	for label, counts := range accuracy {
+	labels, index := make([]string, len(accuracy)), 0
+	for label := range accuracy {
+		labels[index] = label
+		index++
+	}
+	sort.Strings(labels)
+	for _, label := range labels {
+		counts := accuracy[label]
 		fmt.Println(label, counts)
 	}
 }
