@@ -13,6 +13,9 @@ when p goes infinity, it becomes ChebyshevDistance.
 
 Since the ManhattanDistance and EuclideanDistance are very frequently used, they are
 implemented separately.
+
+MahalanobisDistance uses an inverse covariance supplied by the caller.
+SquaredMahalanobisDistance binds that matrix into a DistanceFunction.
 */
 
 import (
