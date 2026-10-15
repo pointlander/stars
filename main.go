@@ -346,6 +346,10 @@ func clusterDataset(records []Fisher, size, width, k, iterations int) {
 		records[i], records[j] = records[j], records[i]
 	})
 	embedding := LearnEmbeddingIris(records, size, width, k, iterations)
+	printClusters(embedding, k)
+}
+
+func printClusters(embedding []Fisher, k int) {
 	accuracy := make(map[string][]int)
 	for i := range embedding {
 		fmt.Println(embedding[i].Cluster, embedding[i].Label)
@@ -366,9 +370,67 @@ func ClusterMode() {
 	clusterDataset(Load(), 4, 5, 3, 2*1024)
 }
 
+// clusterStandardized clusters standardized measurements, keeping the
+// lowest-inertia run. Breast cancer features span several orders of
+// magnitude, so equal scaling is what lets both diagnoses form.
+func clusterStandardized(records []Fisher, k, restarts int) []Fisher {
+	n := len(records)
+	size := len(records[0].Measures)
+	flat := make([]float64, 0, n*size)
+	for _, record := range records {
+		flat = append(flat, record.Measures...)
+	}
+	standardizeColumns(flat, n, size)
+	vectors := make([][]float64, n)
+	for i := range vectors {
+		vectors[i] = flat[i*size : (i+1)*size]
+	}
+	bestSSE := math.Inf(1)
+	var best []int
+	for run := 0; run < restarts; run++ {
+		labels, centers, err := kmeans.Kmeans(int64(run+1), vectors, k, kmeans.SquaredEuclideanDistance, 100)
+		if err != nil {
+			panic(err)
+		}
+		sse := 0.0
+		for i, label := range labels {
+			if label < 0 || label >= len(centers) {
+				sse = math.Inf(1)
+				break
+			}
+			for d, value := range vectors[i] {
+				delta := value - centers[label][d]
+				sse += delta * delta
+			}
+		}
+		if math.IsNaN(sse) || math.IsInf(sse, 0) || sse >= bestSSE {
+			continue
+		}
+		bestSSE = sse
+		best = labels
+	}
+	if best == nil {
+		panic("k-means produced no finite clustering")
+	}
+	out := make([]Fisher, n)
+	copy(out, records)
+	for i, label := range best {
+		out[i].Cluster = label
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Cluster < out[j].Cluster
+	})
+	return out
+}
+
 // ClusterBcwd is the breast cancer wisconsin diagnostic clustering mode
 func ClusterBcwd() {
-	clusterDataset(LoadBcwd(), 30, 5, 2, 2*1024)
+	rng := rand.New(rand.NewSource(1))
+	records := LoadBcwd()
+	rng.Shuffle(len(records), func(i, j int) {
+		records[i], records[j] = records[j], records[i]
+	})
+	printClusters(clusterStandardized(records, 2, 33), 2)
 }
 
 func main() {

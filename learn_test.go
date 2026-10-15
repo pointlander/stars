@@ -26,6 +26,39 @@ func TestLoadBcwd(t *testing.T) {
 	}
 }
 
+func TestBcwdClusterAccuracy(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	records := LoadBcwd()
+	rng.Shuffle(len(records), func(i, j int) {
+		records[i], records[j] = records[j], records[i]
+	})
+	got := clusterStandardized(records, 2, 33)
+	if len(got) != len(records) {
+		t.Fatalf("len %d", len(got))
+	}
+	var agree0, agree1 int
+	for _, record := range got {
+		if record.Cluster < 0 || record.Cluster > 1 {
+			t.Fatalf("cluster %d", record.Cluster)
+		}
+		malignant := record.Label == "M"
+		if malignant == (record.Cluster == 0) {
+			agree0++
+		}
+		if malignant == (record.Cluster == 1) {
+			agree1++
+		}
+	}
+	agree := agree0
+	if agree1 > agree {
+		agree = agree1
+	}
+	accuracy := float64(agree) / float64(len(got))
+	if accuracy < 0.90 {
+		t.Fatalf("accuracy %g", accuracy)
+	}
+}
+
 func TestBcwdOneStep(t *testing.T) {
 	records := LoadBcwd()
 	got := LearnEmbeddingIris(records, 30, 5, 2, 1)
